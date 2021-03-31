@@ -1,0 +1,258 @@
+#!/bin/bash
+
+# global values
+TMPFILE_ROOT="/tmp/"
+TMPFILE_PREFIX=$TMPFILE_ROOT"tacheron"
+TACHERON_ROOT="/etc/tacheron/"
+TACHERONTAB_PREFIX=$TACHERON_ROOT"tacherontab"
+TACHERONTAB_ALLOW=$TACHERON_ROOT"tacheron.allow"
+TACHERONTAB_DENY=$TACHERON_ROOT"tacheron.deny"
+smallest_sec_interval=15
+
+# funcs
+sleep_until_next_time_point () {
+    sleep 1
+    sec=1
+    while [ $sec -ne 0 ]
+    do
+    sec=10#`date +%S`
+    sec=$(( sec % $smallest_sec_interval ))
+    done
+}
+
+carry_out_mission () {
+    eval $1
+    echo `date +%Y-%m-%d' '%H:%M:%S.%N| cut -b 1-26` : carry out mission $1
+}
+
+handle_str () {
+    if [[ "$1" =~ ^[0-9]+$ ]];then
+        #echo "type1"
+        if [ $1 -eq $2 ];then
+            echo good
+        else
+            echo bad
+        fi
+    elif [[ "$1" =~ ^[0-9]+(,[0-9]+)+$ ]];then
+        #echo "type2"
+        ret=$(echo $1 | awk -F ',' -v target=$2 '{for(i=1;i<=NF;i++)if($i==target){print "good";break}}')
+        if [ -z "$ret" ];then
+            echo bad
+        else
+            echo good
+        fi
+    elif [[ "$1" =~ ^[0-9]+\-[0-9]+$ ]];then
+        #echo "type3"
+        ret=$(echo $1 | awk -F '-' -v target=$2 '{if(($1<=target)&&(target<=$2)) {print "good"}}')
+        if [ -z "$ret" ];then
+            echo bad
+        else
+            echo good
+        fi
+    elif [[ "$1" =~ ^[0-9]+\-[0-9]+(~[0-9]+)+$ ]];then
+        #echo "type4"
+        range=${1%%~*}
+        forbid=${1#*~}
+        ret=$(echo $range | awk -F '-' -v target=$2 '{if(($1<=target)&&(target<=$2)) {print "good"}}')
+        if [ -z "$ret" ];then
+            echo bad
+        else
+            ret=$(echo $forbid | awk -F '~' -v target=$2 '{for(i=1;i<=NF;i++)if($i==target){print "bad";break}}')
+            if [ -z "$ret" ];then
+                echo good
+            else
+                echo bad
+            fi
+        fi
+    elif [[ "$1" =~ ^[0-9]+\-[0-9]+/[0-9]+ ]];then
+        #echo "type5"
+        range=${1%%/*}
+        interval=${1#*/}
+        num_in_range=$(echo $range | awk -F '-' '{print $2-$1+1}')
+        if [ $num_in_range -lt $interval ];then
+            echo bad
+        fi
+        ret=$(echo $range | awk -F '-' -v target=$2 -v interval=$interval '{if(($1<=target)&&(target<=$2)&&((1+target-$1)%interval==0)) {print "good"}}')
+        if [ -z "$ret" ];then
+            echo bad
+        else
+            echo good
+        fi
+    elif [[ "$1" =~ \*/[0-9]+ ]];then
+        #echo "type6"
+        start=${3%%,*}
+        interval=${1#*/}
+        res=$(((1+$2-start)%interval))
+        if [ $res -eq 0 ];then
+            echo good
+        else
+            echo bad
+        fi
+    elif [[ "$1" == "*" ]];then
+        #echo "type7"
+        echo good
+    else
+        #echo "type8"
+        echo bad
+    fi
+}
+
+handle_tacherontab_mission () {
+    if [ "$1" !=  "" ];then
+        time_now=`date +%Y-%m-%d' '%w' '%H:%M:%S.%N| cut -b 1-26`
+        month=`echo $time_now | cut -b 6-7`
+        month=$((10#$month))
+        day=`echo $time_now | cut -b 9-10`
+        day=$((10#$day))
+        hour=`echo $time_now | cut -b 14-15`
+        hour=$((10#$hour))
+        min=`echo $time_now | cut -b 17-18`
+        min=$((10#$min))
+        sec=`echo $time_now | cut -b 20-21`
+        sec=$((10#$sec))
+        sec=$((sec/15))
+        weekday=`echo $time_now | cut -b 12-12`
+        weekday=$((10#$weekday))
+        #echo $time_now
+        #echo month=$month
+        #echo day=$day
+        #echo hour=$hour
+        #echo min=$min
+        #echo real_sec=$sec
+        #echo sec=$sec
+        #echo weekday=$weekday
+
+        a=$(echo "$1" | awk -F ' ' '{print $1}')
+        b=$(echo "$1" | awk -F ' ' '{print $2}')
+        c=$(echo "$1" | awk -F ' ' '{print $3}')
+        d=$(echo "$1" | awk -F ' ' '{print $4}')
+        e=$(echo "$1" | awk -F ' ' '{print $5}')
+        f=$(echo "$1" | awk -F ' ' '{print $6}')
+        #g=$(echo $1 | awk -F ' ' '{$1=$2=$3=$4=$5=$6="";print}')
+        g=${1#* }
+        g=${g#* }
+        g=${g#* }
+        g=${g#* }
+        g=${g#* }
+        g=${g#* }
+
+        ret=$(handle_str "$a" "$sec")
+        if [ "$ret" = "bad" ];then
+            #echo "bad sec"
+            return 0
+        fi
+        ret=$(handle_str "$b" "$min")
+        if [ "$ret" = "bad" ];then
+            #echo "bad min"
+            return 0
+        fi
+        ret=$(handle_str "$c" "$hour")
+        if [ "$ret" = "bad" ];then
+            #echo "bad hour"
+            return 0
+        fi
+        ret=$(handle_str "$d" "$day")
+        if [ "$ret" = "bad" ];then
+            #echo "bad day"
+            return 0
+        fi
+        ret=$(handle_str "$e" "$month")
+        if [ "$ret" = "bad" ];then
+            #echo "bad month"
+            return 0
+        fi
+        ret=$(handle_str "$f" "$weekday")
+        if [ "$ret" = "bad" ];then
+            #echo "bad weekday"
+            return 0
+        fi
+        carry_out_mission "$g"
+        return 0
+    fi
+}
+
+handle_tacherontab_file () {
+    cat $1 | while read line
+    do
+        handle_tacherontab_mission "$line"
+    done
+}
+
+check_allow () {
+    cat "/etc/tacheron/tacheron.allow" | while read line
+    do
+        if [ "$(whoami)" == "$line" ];then
+            echo "allow"
+        fi
+    done
+}
+
+check_deny () {
+    cat "/etc/tacheron/tacheron.deny" | while read line
+    do
+        if [ "$(whoami)" == "$line" ];then
+            echo "deny"
+        fi
+    done
+}
+
+init_tacheron_files () {
+    if [ ! -e $TACHERON_ROOT ];then
+        if [ "$(whoami)" != "root" ];then
+            echo "$TACHERON_ROOT not exist! You are not root! Run again as root and files will be created automatically!"
+            exit 1
+        fi
+        mkdir -p $TACHERON_ROOT
+    fi
+    if [ ! -e $TACHERONTAB_ALLOW ];then
+        if [ "$(whoami)" != "root" ];then
+            echo "$TACHERONTAB_ALLOW not exist! You are not root! Run again as root and files will be created automatically!"
+            exit 1
+        fi
+        touch $TACHERONTAB_ALLOW
+    fi
+    if [ ! -e $TACHERONTAB_DENY ];then
+        if [ "$(whoami)" != "root" ];then
+            echo "$TACHERONTAB_DENY not exist! You are not root! Run again as root and files will be created automatically!"
+            exit 1
+        fi
+        touch $TACHERONTAB_DENY
+    fi
+    if [ ! -e $TMPFILE_PREFIX ];then
+        if [ "$(whoami)" != "root" ];then
+            echo "$TMPFILE_PREFIX not exist! You are not root! Run again as root and files will be created automatically!"
+            exit 1
+        fi
+        mkdir -p $TMPFILE_PREFIX
+    fi
+}
+
+
+# main process
+if [ $(whoami) == "root" ];then
+    echo "Starting tacheron as root..."
+else
+    # default deny only allow can run tacheron, so this code is useless
+    #res=$(check_allow)
+    #if [ "$res" == "allow" ];then
+    #    echo "Starting tacheron as $(whoami)"
+    #fi
+    res=$(check_deny)
+    if [ "$res" == "deny" ];then
+        echo "You don't have access to start tacheron, exit..."
+        exit 1
+    fi
+    echo "Starting tacheron as $(whoami)"
+fi
+
+init_tacheron_files
+
+sleep_until_next_time_point
+while [ 1 ]
+do
+    for tacherontab_file in `find /etc/tacheron -regex '/etc/tacheron/tacherontab.*$'`
+    do
+        handle_tacherontab_file $tacherontab_file
+    done
+    sleep_until_next_time_point
+done

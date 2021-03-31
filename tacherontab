@@ -1,0 +1,83 @@
+#!/bin/bash
+
+# global values
+TMPFILE_ROOT="/tmp/"
+TMPFILE_PREFIX=$TMPFILE_ROOT"tacheron"
+TACHERON_ROOT="/etc/tacheron/"
+TACHERONTAB_PREFIX=$TACHERON_ROOT"tacherontab"
+
+
+init_tacheron_files () {
+    if [ ! -e $TACHERON_ROOT ];then
+        if [ "$(whoami)" != "root" ];then
+            echo "$TACHERON_ROOT not exist! You are not root! Run again as root and files will be created automatically!"
+            exit 1
+        fi
+        mkdir -p $TACHERON_ROOT
+    fi
+    if [ ! -e $TMPFILE_PREFIX ];then
+        if [ "$(whoami)" != "root" ];then
+            echo "$TMPFILE_PREFIX not exist! You are not root! Run again as root and files will be created automatically!"
+            exit 1
+        fi
+        mkdir -p $TMPFILE_PREFIX
+    fi
+}
+
+print_usage () {
+    echo "      Usage: tacheron [ -u user ] { -l | -r | -e }"
+    echo "         -l: list user's tacherontab"
+    echo "         -r: remove user's tacherontab"
+    echo "         -e: edit user's tacherontab"
+}
+
+init_tacheron_files
+
+if [ $# -eq 3 ];then
+    case $1 in
+        -u)
+            case $3 in
+                -l)
+                    if [ -f $TACHERONTAB_PREFIX$2 ];then
+                        cat $TACHERONTAB_PREFIX$2
+                    else
+                        echo "Tacherontab: tacherontab file for user $2 not exist"
+                    fi
+                    ;;
+                -r)
+                    if [ -f $TACHERONTAB_PREFIX$2 ];then
+                        rm -i $TACHERONTAB_PREFIX$2
+                    else
+                        echo "Tacherontab: tacherontab file for user $2 not exist"
+                    fi
+                    ;;
+                -e)
+                    if [ -f $TACHERONTAB_PREFIX$2 ];then
+                        vi $TACHERONTAB_PREFIX$2
+                    else
+                        vi $TMPFILE_PREFIX.$2
+                        if [ -f $TMPFILE_PREFIX.$2 ];then
+                            cp $TMPFILE_PREFIX.$2 $TACHERONTAB_PREFIX$2
+                            rm $TMPFILE_PREFIX.$2
+                        else
+                            echo "Tacherontab: tacherontab file for user $2 not saved"
+                        fi
+                    fi
+                    ;;
+                 *) echo "Tacherontab: Invalid option $3"
+                    print_usage
+                    exit 1
+                    ;;
+            esac
+            ;;
+         *) echo "Tacheron: Invalid option $1";;
+    esac
+elif [ $# -lt 3 ];then
+    echo "Tacherontab: too few arguments"
+    print_usage
+    exit 1
+else
+    echo "Tacherontab: too many arguements"
+    print_usage
+    exit 1
+fi
